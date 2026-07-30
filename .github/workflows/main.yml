@@ -1,0 +1,78 @@
+name: KSU-Next Manager (armeabi-v7a)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "KernelSU-Next branch"
+        default: "next"
+        required: true
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (just for workflow)
+        uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip wget git openjdk-17-jdk
+
+      - name: Clone KernelSU-Next (manager only)
+        run: |
+          git clone --depth=1 -b ${{ github.event.inputs.branch }} https://github.com/KernelSU-Next/KernelSU-Next.git ksunext
+          cd ksunext/manager
+
+      - name: Patch abiFilters to armeabi-v7a only
+        working-directory: ksunext/manager
+        run: |
+          # 适配 kts 和 groovy 两种写法
+          if [ -f app/build.gradle.kts ]; then
+            sed -i 's/abiFilters(.*)/abiFilters("armeabi-v7a")/' app/build.gradle.kts
+            sed -i 's/abiFilters += .*/abiFilters += "armeabi-v7a"/' app/build.gradle.kts
+          fi
+          if [ -f app/build.gradle ]; then
+            sed -i "s/abiFilters .*/abiFilters 'armeabi-v7a'/" app/build.gradle
+          fi
+          # 关掉 splits.abi 段（如果存在），避免只出 v8a split
+          sed -i '/splits {/,/}/d' app/build.gradle.kts app/build.gradle 2>/dev/null || true
+          echo "--- patched abiFilters ---"
+          grep -n "abiFilters" app/build.gradle.kts app/build.gradle 2>/dev/null || true
+
+      - name: Setup Android SDK
+        run: |
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O sdk.zip
+          unzip -q sdk.zip -d $HOME/android-sdk/cmdline-tools
+          mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          yes | sdkmanager --licenses >/dev/null 2>&1
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.3.11579264"
+
+      - name: Grant execute perm & Build APK
+        working-directory: ksunext/manager
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-daemon
+
+      - name: Locate APK
+        id: apk
+        working-directory: ksunext/manager
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          echo "apk=$APK" >> $GITHUB_OUTPUT
+          ls -lh "$APK"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KernelSU-Next-Manager-armeabi-v7a
+          path: ${{ steps.apk.outputs.apk }}
+
