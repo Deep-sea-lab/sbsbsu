@@ -54,10 +54,12 @@ jobs:
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
           # 当前 step 内立即生效，供本 step 后面调用 sdkmanager 使用
           export ANDROID_HOME=$HOME/android-sdk
+          export ANDROID_SDK_ROOT=$HOME/android-sdk
           export PATH="$HOME/android-sdk/cmdline-tools/latest/bin:$PATH"
 
           yes | sdkmanager --licenses >/dev/null 2>&1
@@ -67,6 +69,7 @@ jobs:
         working-directory: ksunext/manager
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
           chmod +x gradlew
           ./gradlew clean assembleRelease --no-daemon
